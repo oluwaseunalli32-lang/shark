@@ -27,16 +27,22 @@ OWNER_USERNAME = "ads_official123"          # without @
 OWNER_IDS = {8048582254, 8923090068}
 DB_PATH = "bot_data.db"
 
-# Conversation states
 EDIT_WELCOME, EDIT_REMINDER, EDIT_IMAGE, EDIT_LINK, EDIT_TEXT = range(5)
 
 DEFAULTS = {
-    "welcome_message":  "Welcome to Bonus Specialist! 🤖\nUse /subscribe for daily AI tips.",
-    "reminder_message": "💡 Here's your AI tip:",
+    "welcome_message": (
+        "🦈 Welcome to Shark!\n\n"
+        "You're now on the campaign list and will receive tips automatically.\n\n"
+        "Commands:\n"
+        "/stop – unsubscribe\n"
+        "/subscribe – re-subscribe\n"
+        "/privacy – privacy policy"
+    ),
+    "reminder_message": "🦈 Shark tip:",
     "interval_hours":   "0",              # 0 = off, 5, 10
-    "tip_image":        "",               # Telegram file_id
+    "tip_image":        "",
     "tip_link":         "",
-    "tip_text":         "AI is transforming the world. Stay curious!",
+    "tip_text":         "Stay curious — the best ideas come from asking questions.",
 }
 
 # =========================================================
@@ -131,7 +137,6 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
                 await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
         except Exception as e:
             logger.warning(f"send_reminder to {chat_id} failed: {e}")
-            # fallback: text only
             if image:
                 try:
                     await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
@@ -146,46 +151,48 @@ def reschedule_reminder(app: Application):
     except ValueError:
         hours = 0
     if hours > 0:
-        # first run after one full interval
         app.job_queue.run_repeating(
             send_reminder,
             interval=hours * 3600,
             first=hours * 3600,
             name="daily_reminder",
         )
-        logger.info(f"Reminder scheduled every {hours}h")
+        logger.info(f"Shark reminder scheduled every {hours}h")
     else:
-        logger.info("Reminder disabled")
+        logger.info("Shark reminder disabled")
 
 # =========================================================
 # User commands
 # =========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    # AUTO-SUBSCRIBE on /start — everyone lands on the campaign list
+    add_subscriber(chat_id)
     await update.message.reply_text(get_setting("welcome_message", DEFAULTS["welcome_message"]))
 
 async def privacy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Privacy Policy:\n"
-        "This bot stores your chat ID only to deliver AI tips. "
-        "No message content or personal data is stored. "
-        "Use /stop anytime to unsubscribe."
+        "🦈 Shark — Privacy Policy\n\n"
+        "We store your Telegram chat ID only, so Shark can send you its scheduled tips.\n"
+        "No message content or personal data is stored.\n"
+        "Use /stop at any time to be removed from the campaign list."
     )
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_subscribed(chat_id):
-        await update.message.reply_text("✅ You're already subscribed.")
+        await update.message.reply_text("✅ You're already on the Shark campaign list.")
         return
     add_subscriber(chat_id)
     hrs = get_setting("interval_hours", "0")
     if hrs == "0":
         await update.message.reply_text("✅ Subscribed! (Reminders are currently paused — admin will enable them.)")
     else:
-        await update.message.reply_text(f"✅ Subscribed! You'll get a tip every {hrs} hours.")
+        await update.message.reply_text(f"✅ Subscribed! You'll get a Shark tip every {hrs} hours.")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remove_subscriber(update.effective_chat.id)
-    await update.message.reply_text("🛑 Unsubscribed.")
+    await update.message.reply_text("🛑 You've been removed from the Shark campaign list.")
 
 # =========================================================
 # Admin panel UI
@@ -216,9 +223,8 @@ async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user):
         await update.message.reply_text("❌ Not authorized.")
         return
-    await update.message.reply_text("🛠 *Admin Panel*", parse_mode="Markdown", reply_markup=admin_panel_markup())
+    await update.message.reply_text("🛠 *Shark Admin Panel*", parse_mode="Markdown", reply_markup=admin_panel_markup())
 
-# --- Non-editing callbacks (menu / interval / subscribers) ---
 async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -229,7 +235,7 @@ async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     data = q.data
 
     if data == "adm_back":
-        await q.edit_message_text("🛠 *Admin Panel*", parse_mode="Markdown", reply_markup=admin_panel_markup())
+        await q.edit_message_text("🛠 *Shark Admin Panel*", parse_mode="Markdown", reply_markup=admin_panel_markup())
 
     elif data == "adm_close":
         await q.edit_message_text("✅ Admin panel closed.")
@@ -242,14 +248,13 @@ async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         set_setting("interval_hours", hrs)
         reschedule_reminder(context.application)
         label = {"0": "Off", "5": "Every 5 hours", "10": "Every 10 hours"}.get(hrs, hrs)
-        await q.edit_message_text(f"✅ Interval set to: {label}\n\n🛠 *Admin Panel*",
+        await q.edit_message_text(f"✅ Interval set to: {label}\n\n🛠 *Shark Admin Panel*",
                                   parse_mode="Markdown", reply_markup=admin_panel_markup())
 
     elif data == "adm_subs":
-        await q.edit_message_text(f"👥 Subscribers: {len(get_subscribers())}\n\n🛠 *Admin Panel*",
+        await q.edit_message_text(f"👥 Subscribers: {len(get_subscribers())}\n\n🛠 *Shark Admin Panel*",
                                   parse_mode="Markdown", reply_markup=admin_panel_markup())
 
-# --- Entry point: click an "Edit …" button ---
 async def admin_edit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -349,16 +354,12 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # User commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("privacy", privacy))
     app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("stop", stop))
-
-    # Admin command
     app.add_handler(CommandHandler("admin", admin_cmd))
 
-    # Admin conversation (register BEFORE generic callback handler)
     conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(
@@ -377,13 +378,12 @@ def main():
     )
     app.add_handler(conv)
 
-    # Menu / interval callbacks
     app.add_handler(CallbackQueryHandler(
         admin_menu_callback,
         pattern="^(adm_back|adm_close|adm_interval|adm_subs|int_0|int_5|int_10)$",
     ))
 
-    logger.info("Bot starting…")
+    logger.info("Shark bot starting…")
     app.run_polling()
 
 if __name__ == "__main__":
